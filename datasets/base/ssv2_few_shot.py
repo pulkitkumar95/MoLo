@@ -49,7 +49,9 @@ class Split_few_shot():
                 self.add_vid(paths, class_id)
         else:
             for class_folder in folder:
-                paths = class_folder.strip().split('//')[-1]
+                split, paths = class_folder.strip().split('//')
+                if 'val' in paths:
+                    continue
 
                 class_id = int(class_folder.strip().split('//')[0][len(split_dataset):]) # class_folders.index(class_folder)
                 self.add_vid(paths, class_id)
@@ -364,14 +366,20 @@ class Ssv2_few_shot(BaseVideoDataset):
             if self.dataset_name == 'Ssv2_few_shot':
                 video_path = os.path.join(self.data_root_dir, paths + ".mp4")
             else:
+                
                 video_path = os.path.join(self.data_root_dir, paths)
+                video_path = video_path.replace('_256', '')
+                class_name = video_path.split('/')[-2]
+                new_class_name = ' '.join(class_name.split('_'))
+                video_path = video_path.replace(class_name, new_class_name)
+
             sample_info = {
                 "path": video_path,
                 # "supervised_label": class_,
             }
             # sample_info = self._get_sample_info(index)
             index = vid_id
-            retries = 5 if self.split == "train" else 10   # 1
+            retries = 1 if self.split == "train" else 1   # 1
             for retry in range(retries):
                 try:
                     data, file_to_remove, success = self.decode(
@@ -443,7 +451,13 @@ class Ssv2_few_shot(BaseVideoDataset):
             if self.dataset_name == 'Ssv2_few_shot':
                 video_path = os.path.join(self.data_root_dir, paths + ".mp4")
             else:
+
                 video_path = os.path.join(self.data_root_dir, paths)
+                video_path = video_path.replace('_256', '')
+                class_name = video_path.split('/')[-2]
+                new_class_name = ' '.join(class_name.split('_'))
+                video_path = video_path.replace(class_name, new_class_name)
+
             sample_info = {
                 "path": video_path,
                 # "supervised_label": class_,

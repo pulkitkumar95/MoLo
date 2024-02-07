@@ -25,12 +25,13 @@ from models.base.builder import build_model
 from datasets.base.builder import build_loader, shuffle_dataset
 
 from datasets.utils.mixup import Mixup
+import wandb
 
 logger = logging.get_logger(__name__)
 
 
 def train_epoch(
-    train_loader, model, model_ema, optimizer, train_meter, cur_epoch, mixup_fn, cfg, writer=None, val_meter=None, val_loader=None
+    train_loader, model, model_ema, optimizer, train_meter, cur_epoch, mixup_fn, cfg, writer=None, val_meter=None, val_loader=None, wandb_instance=None
 ):
     """
     Perform the video training for one epoch.
@@ -76,10 +77,10 @@ def train_epoch(
             cu.save_checkpoint(cfg.OUTPUT_DIR, model, model_ema, optimizer, cur_epoch_save+cfg.TRAIN.NUM_FOLDS-1, cfg, model_bucket)
             
             val_meter.set_model_ema_enabled(False)
-            eval_epoch(val_loader, model, val_meter, cur_epoch_save+cfg.TRAIN.NUM_FOLDS-1, cfg, writer)
+            eval_epoch(val_loader, model, val_meter, cur_epoch_save+cfg.TRAIN.NUM_FOLDS-1, cfg, writer, wandb_instance)
             if model_ema is not None:
                 val_meter.set_model_ema_enabled(True)
-                eval_epoch(val_loader, model_ema.module, val_meter, cur_epoch_save+cfg.TRAIN.NUM_FOLDS-1, cfg, writer)
+                eval_epoch(val_loader, model_ema.module, val_meter, cur_epoch_save+cfg.TRAIN.NUM_FOLDS-1, cfg, writer, wandb_instance)
             model.train()
 
         if misc.get_num_gpus(cfg):
@@ -104,7 +105,18 @@ def train_epoch(
             model_dict = model(task_dict)
 
         target_logits = model_dict['logits']
-
+        #getting losses for logging
+        iter_log_dict = {}
+        iter_log_dict['iter_recon_loss'] = model_dict["loss_recons"].item()
+        iter_log_dict['iter_class_1_loss'] = F.cross_entropy(model_dict["logits"], task_dict["target_labels"].long()).item()
+        iter_log_dict['iter_main_class_loss'] =  F.cross_entropy(model_dict["class_logits"], 
+                                        torch.cat([task_dict["real_support_labels"], 
+                                                   task_dict["real_target_labels"]], 0).long()).item()
+        iter_log_dict['iter_s2q_loss'] = F.cross_entropy(model_dict["logits_s2q"], task_dict["target_labels"].long()).item()
+        iter_log_dict['iter_q2s_loss'] = F.cross_entropy(model_dict["logits_q2s"], task_dict["target_labels"].long()).item()
+        iter_log_dict['iter_s2q_motion_loss'] = F.cross_entropy(model_dict["logits_s2q_motion"], task_dict["target_labels"].long()).item()
+        iter_log_dict['iter_q2s_motion_loss'] = F.cross_entropy(model_dict["logits_q2s_motion"], task_dict["target_labels"].long()).item()
+        
         if hasattr(cfg.TRAIN,"USE_CLASSIFICATION") and cfg.TRAIN.USE_CLASSIFICATION:
             if hasattr(cfg.TRAIN,"USE_CLASSIFICATION_ONLY") and cfg.TRAIN.USE_CLASSIFICATION_ONLY:
                 loss = cfg.TRAIN.USE_CLASSIFICATION_VALUE * F.cross_entropy(model_dict["class_logits"], torch.cat([task_dict["real_support_labels"], task_dict["real_target_labels"]], 0).long()) /cfg.TRAIN.BATCH_SIZE
@@ -135,8 +147,13 @@ def train_epoch(
         else:
             
             loss =  F.cross_entropy(model_dict["logits"], task_dict["target_labels"].long()) /cfg.TRAIN.BATCH_SIZE
-       
         # check Nan Loss.
+
+        iter_log_dict['iter_total_loss'] = loss.item()
+        iter_log_dict['iteration'] = cur_iter
+
+        wandb_instance.log(iter_log_dict)
+
         if math.isnan(loss):
             # logger.info(f"logits: {model_dict}")
             loss.backward(retain_graph=False)
@@ -277,7 +294,7 @@ def train_epoch(
 
 
 @torch.no_grad()
-def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
+def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None, wandb_instance=None):
     """
     Evaluate the model on the val set.
     Args:
@@ -294,6 +311,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
     # Evaluation mode enabled. The running stats would not be updated.
     model.eval()
     val_meter.iter_tic()
+    top_1_err_list = []
 
     for cur_iter, task_dict in enumerate(val_loader):
         if cur_iter >= cfg.TRAIN.NUM_TEST_TASKS:
@@ -401,11 +419,13 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                     )
 
                 # Copy the stats from GPU to CPU (sync point).
+            
                 loss, top1_err, top5_err = (
                     loss.item(),
                     top1_err.item(),
                     top5_err.item(),
                 )
+                top_1_err_list.append(top1_err)
             val_meter.iter_toc()
             # Update and log stats.
             val_meter.update_stats(
@@ -447,7 +467,11 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
             writer.plot_eval(
                 preds=all_preds, labels=all_labels, global_step=cur_epoch
             )
-
+    log_dict = {
+        'epoch': cur_epoch,
+        'val_top1_acc': 100 - np.mean(top_1_err_list),
+    }
+    wandb_instance.log(log_dict)
     val_meter.reset()
 
 def train_few_shot(cfg):
@@ -464,6 +488,21 @@ def train_few_shot(cfg):
     torch.manual_seed(cfg.RANDOM_SEED)
     torch.cuda.manual_seed_all(cfg.RANDOM_SEED)
     torch.backends.cudnn.deterministic = True
+    dataset = cfg.args.cfg_file.split('/')[-2]
+    wandb_config_dict = {
+        "dataset": dataset,
+    }
+    wandb_instance = wandb.init(project='molo_baseline',config=wandb_config_dict, 
+                                entity="act_seg_pi_umd")
+    wandb_instance.define_metric("epoch")
+    wandb_instance.define_metric("iteration")
+
+    wandb_instance.define_metric("iter*", step_metric="iteration")
+
+    wandb_instance.define_metric("train*", step_metric="epoch")
+    wandb_instance.define_metric("val*", step_metric="epoch")
+    wandb_instance.define_metric("val_top1_acc", summary="max")
+    
 
     # Setup logging format.
     logging.setup_logging(cfg, cfg.TRAIN.LOG_FILE)
@@ -528,7 +567,7 @@ def train_few_shot(cfg):
     shuffle_dataset(train_loader, cur_epoch)
     
     train_epoch(
-        train_loader, model, model_ema, optimizer, train_meter, cur_epoch, mixup_fn, cfg, writer, val_meter, val_loader
+        train_loader, model, model_ema, optimizer, train_meter, cur_epoch, mixup_fn, cfg, writer, val_meter, val_loader, wandb_instance
     )
     # torch.cuda.empty_cache()
     if writer is not None:

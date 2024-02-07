@@ -9,6 +9,7 @@ import json
 import copy
 import argparse
 import utils.checkpoint as ckp
+from fvcore.common.config import CfgNode
 
 import utils.logging as logging
 logger = logging.get_logger(__name__)
@@ -148,7 +149,10 @@ class Config(object):
                     )
                 cfg_base = self._load_yaml(args, cfg_base_file)
                 cfg = self._merge_cfg_from_base(cfg_base, cfg)
-        cfg = self._merge_cfg_from_command(args, cfg)
+        cfg = CfgNode(init_dict=cfg)
+        if args.opts is not None:
+            cfg.merge_from_list(args.opts)
+    
         return cfg
     
     def _merge_cfg_from_base(self, cfg_base, cfg_new, preserve_base=False):

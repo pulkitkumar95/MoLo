@@ -1,0 +1,10 @@
+,og_name,few_shot_vid_name,vid_id,split,label_id
+974,val10//train_256/ski_jumping/242HSsJEp7s_000046_000056.mp4,242HSsJEp7s_000046_000056,242HSsJEp7s,val,10
+1192,val10//train_256/ski_jumping/7e014W4hH8I_000005_000015.mp4,7e014W4hH8I_000005_000015,7e014W4hH8I,val,10
+5032,train14//train_256/country_line_dancing/bwySl3oBh9Y_000139_000149.mp4,bwySl3oBh9Y_000139_000149,bwySl3oBh9Y,train,14
+5622,train20//train_256/drop_kicking/kj2h4lPd43s_000028_000038.mp4,kj2h4lPd43s_000028_000038,kj2h4lPd43s,train,20
+5982,train24//train_256/giving_or_receiving_award/apO64ogqiY0_000033_000043.mp4,apO64ogqiY0_000033_000043,apO64ogqiY0,train,24
+6449,train29//train_256/making_snowman/OoNR4rqk8_0_000028_000038.mp4,OoNR4rqk8_0_000028_000038,OoNR4rqk8_0,train,29
+6918,train34//train_256/playing_badminton/EL47wkhiOq8_000022_000032.mp4,EL47wkhiOq8_000022_000032,EL47wkhiOq8,train,34
+6931,train34//train_256/playing_badminton/NkDqQfayA2U_000054_000064.mp4,NkDqQfayA2U_000054_000064,NkDqQfayA2U,train,34
+9772,train63//train_256/weaving_basket/VbknyAGw1Ro_000073_000083.mp4,VbknyAGw1Ro_000073_000083,VbknyAGw1Ro,train,63
